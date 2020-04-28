@@ -65,12 +65,16 @@ for satellite_data in filtered_data:
 from rasterio.mask import mask
 from rasterio.plot import show
 
-masked_data = []
+masked_data = None
 transformation_data = []
 for polygon in combined_polygons:
-    filtered_data, transform_meta = mask(raster, polygon.geometry, crop = True)
-    masked_data.append(np.squeeze(filtered_data))
-    transformation_data.append(transform_meta)
+    for geometry in polygon.geometry:
+        filtered_data, transform_meta = mask(raster, polygon.geometry, crop = True)
+        if masked_data is None: 
+            masked_data = filtered_data
+        else: 
+            masked_data = np.vstack((masked_data, filtered_data))
+        transformation_data.append(transform_meta)
 
 # %% Plot the graph
 import matplotlib.pyplot as plt
