@@ -44,20 +44,33 @@ for satelite_data in filtered_data:
 # %% Changing to geopandas and buffer the points 
 import geopandas
 import pyproj
+import pandas as pd
+import ForestFireNetherlands.handler.geopandas as ngpd
 
 shapefile_the_netherlands = geopandas.read_file("C:\\Users\\Coen\\Documents\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\shapefile_border_netherlands\\bordernetherlands.shp")
 
-shapefiles = []
+combined_polygons = []
 
 for satellite_data in filtered_data:
     shapefile = geopandas.GeoDataFrame(satellite_data, geometry='geometry', crs=pyproj.CRS('EPSG:4326'))
+    print(shapefile)
     shapefile = shapefile.to_crs(pyproj.CRS('EPSG:28992'))
-    
     joined_shapefile = geopandas.tools.sjoin(shapefile, shapefile_the_netherlands, how="left")
     shapefile = shapefile[joined_shapefile["Landsnaam"] == "Nederland"]
     shapefile.geometry = shapefile.geometry.buffer(500) # buffer in meters
     shapefile.geometry = shapefile.envelope
-    shapefiles.append(shapefile)
+    combined_polygons.append(ngpd.unary_union_by_day(shapefile, "yyyymmdd", 'EPSG:28992'))
+
+#%% Filters Rasterfile 
+from rasterio.mask import mask
+from rasterio.plot import show
+
+masked_data = []
+transformation_data = []
+for polygon in combined_polygons:
+    filtered_data, transform_meta = mask(raster, polygon.geometry, crop = True)
+    masked_data.append(np.squeeze(filtered_data))
+    transformation_data.append(transform_meta)
 
 # %% Plot the graph
 import matplotlib.pyplot as plt
@@ -65,13 +78,29 @@ from rasterio.plot import show
 
 fig, ax = plt.subplots()
 
-# shapefile_the_netherlands.boundary.plot(ax=ax)
-shapefiles[0].plot(ax=ax, color="red")
-show(raster, ax=ax)
+shapefile_the_netherlands.boundary.plot(ax=ax)
+# shapefiles[0].plot(ax=ax, color="red")
+show(masked_data[0], ax=ax)
 plt.axis("off")
 plt.tight_layout()
-plt.savefig("test.png", dpi=1000)
+# plt.savefig("test.png", dpi=1000)
 
 plt.show()  
+
+# %% Saves the filter data
+import rasterio
+
+pathname = "C:\\Users\\Coen\\Documents\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Made_Files"
+os.chdir(pathname)
+
+for index in range(len(masked_data)):
+    out_meta = raster.meta.copy()
+    out_meta.update({"driver": "GTiff",
+                     "height": masked_data[index].shape[1],
+                     "width": masked_data[index].shape[2],
+                     "transform": transformation_data[index]})
+    print(selected_files[index][:-4])
+    with rasterio.open("filter" + selected_files[index][:-4] + ".tif", "w", **out_meta) as dest:
+        dest.write(masked_data[index])
 
 # %%
