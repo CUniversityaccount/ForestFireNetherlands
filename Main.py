@@ -15,7 +15,7 @@ import pyproj
 import pandas as pd
 import geopandas
 
-pathname = "C:\\Users\\Coen\\Documents\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files"
+pathname = "E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\MODIS\\OriginalData"
 os.chdir(pathname)
 
 #%% Loading Corina file 
@@ -26,19 +26,21 @@ raster = SatelliteDataService.get_satellite_object_raster(raster_pathname)
 shapefile_the_netherlands = geopandas.read_file("C:\\Users\\Coen\\Documents\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\shapefile_border_netherlands\\bordernetherlands.shp")
 
 #%% Load txt files from MODIS and VIIRS to txt
-files = os.listdir()[5:6]
+files = os.listdir()
 satellite_data_files = []
 
 # Path where to save the files
-save_map = "E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\MODIS\\ParsedRasterData"
+save_map_raster = "E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\MODIS\\ParsedRasterData"
+save_map_shapefile = "E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\MODIS\\ParsedShapeFile"
 
 delimiter_modis = " " # MODIS
 delimiter_viirs = "," # VIIRS
 
 longitude = [3.2 ,7.22] # max and min longitude of the Netherlands in degrees based on EPSG:28992
 latitude = [50.75, 53.7] # max and min latitude of the Netherlands in degrees based on EPSG:28992
-print
+
 for filename in files:
+    print(filename)
     satellite_data = SatelliteDataService.get_satellite_object_txt(filepath=filename, 
                                                                    delimiter=delimiter_modis)
 
@@ -61,36 +63,28 @@ for filename in files:
     # Save the data shape per day
     combined_shapefile = ngpd.unary_union_by_day(shapefile, "yyyymmdd", 'EPSG:28992')
     
-    masked_data = None
     transformation_data = []
 
-    for polygon in combined_shapefile.geometry:
-        filtered_data = None
-        transform_meta = None 
-
-        if polygon.geom_type == 'MultiPolygon':
-            filtered_data, transform_meta = mask(raster, polygon, crop = False, nodata=None)
-
-        elif polygon.geom_type == 'Polygon':
-            filtered_data, transform_meta = mask(raster, [polygon], crop = False, nodata=None)
-
-        if masked_data is None: 
-            masked_data = filtered_data
-        else: 
-            masked_data = np.vstack((masked_data, filtered_data))
-    print(raster.transform)
+    if (len(combined_shapefile.geometry) == 0):
+        continue
+    
+    masked_data, transformation_meta = mask(raster, combined_shapefile.geometry, crop=False, nodata=None)
     out_meta = raster.meta.copy()
+
     window = get_data_window(raster.read(1, masked=True))
     out_meta.update({"driver": "GTiff",
                      "count": masked_data.shape[0],
                      "height": masked_data.shape[1],
                      "width": masked_data.shape[2],
-                     "transform": rasterio.windows.transform(window, raster.transform)})
+                     "transform": transformation_meta })
 
-    with rasterio.open(save_map + "\\landuse_" + filename[:-4] + ".tif", "w", **out_meta) as dest:
+    # Saving rasterdata to correct map
+    with rasterio.open(save_map_raster + "\\landuse_" + filename[:-4] + ".tif", "w", **out_meta) as dest:
         dest.write(masked_data)
     
+    # Saving Shapefile
+    combined_shapefile.to_file(save_map_shapefile + "\\burned_areas_" + filename[:-4] + ".shp")
     del masked_data
     
 
-# %%
+    # %%
