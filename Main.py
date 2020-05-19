@@ -2,10 +2,11 @@
 import ForestFireNetherlands as FFN
 import ForestFireNetherlands.service.SatelliteDataService as SatelliteDataService
 import ForestFireNetherlands.handler.geopandas as ngpd
+import ForestFireNetherlands.handler.calculations as calc
 
 import os
 import numpy as np
-from shapely.geometry import Point
+from shapely.geometry import Point, MultiPoint
 from rasterio.mask import mask
 from rasterio.windows import get_data_window
 import rasterio
@@ -15,7 +16,8 @@ import pyproj
 import pandas as pd
 import geopandas
 
-pathname = "E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\MODIS\\OriginalData"
+# pathname = "E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\MODIS\\OriginalData"
+pathname = "E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\VIIRS\\OriginalData"
 os.chdir(pathname)
 
 #%% Loading Corina file 
@@ -30,20 +32,32 @@ files = os.listdir()
 satellite_data_files = []
 
 # Path where to save the files
-save_map_raster = "E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\MODIS\\ParsedRasterData"
-save_map_shapefile = "E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\MODIS\\ParsedShapeFile"
+# save_map_raster = "E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\MODIS\\ParsedRasterData" # MODIS
+save_map_raster = "E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\VIIRS\\ParsedRasterData" # VIIRS
+# save_map_shapefile = "E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\MODIS\\ParsedShapeFile" # MODIS
+save_map_shapefile = "E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\VIIRS\\ParsedShapeFile" # VIIRS
 
 delimiter_modis = " " # MODIS
-delimiter_viirs = "," # VIIRS
+delimiter_viirs = "," # VIIRS 750m
 
 longitude = [3.2 ,7.22] # max and min longitude of the Netherlands in degrees based on EPSG:28992
 latitude = [50.75, 53.7] # max and min latitude of the Netherlands in degrees based on EPSG:28992
 
-for filename in files:
-    print(filename)
-    satellite_data = SatelliteDataService.get_satellite_object_txt(filepath=filename, 
-                                                                   delimiter=delimiter_modis)
+# Sets if the file is Modis or VIIRS file 
+satellite = "VIIRS"
 
+
+for filename in files:
+    delimiter = None
+
+    if satellite == "VIIRS":
+        delimiter = delimiter_viirs
+    elif satellite == "MODIS":
+        delimiter == delimiter_modis
+
+    satellite_data = SatelliteDataService.get_satellite_object_txt(filepath=filename, 
+                                                                    delimiter=delimiter)
+    
     # Data filter
     longitude_query = 'lon > ' + str(longitude[0]) + ' and lon < ' + str(longitude[-1])
     latitude_query = 'lat > ' + str(latitude[0]) + ' and lat < ' + str(latitude[-1])
@@ -52,21 +66,53 @@ for filename in files:
     # Adds shapes
     satellite_data['geometry'] = satellite_data.apply(lambda x: Point((float(x.lon), float(x.lat))), axis=1)
 
-    # Manipulates the data to pixel with a resolutio of wich is declared in size
+    # Masks and make the right projection from the data
     shapefile = geopandas.GeoDataFrame(satellite_data, geometry='geometry', crs=pyproj.CRS('EPSG:4326'))
     shapefile = shapefile.to_crs(pyproj.CRS('EPSG:28992'))
     joined_shapefile = geopandas.tools.sjoin(shapefile, shapefile_the_netherlands, how="left")
     shapefile = shapefile[joined_shapefile["Landsnaam"] == "Nederland"]
-    shapefile.geometry = shapefile.geometry.buffer(500) # buffer in meters
-    shapefile.geometry = shapefile.envelope
+    print(shapefile)
+    if (len(shapefile.geometry) == 0):
+        print("No pixels")
+        continue
+
+    pixel_sizes = None
+
+    # Calculates The corners of the area
+    if satellite == "VIIRS":
+        row_measurements = 3200
+        pixel_nadir = 0.750 # km
+        satellite_altitude = 833 # km
+        pixel_sizes = calc.calculatesPixelSizeVIIRS(shapefile["sample"], pixel_nadir, row_measurements)
+    elif satellite == "MODIS":
+        row_measurements = 1354
+        pixel_nadir = 1 # km
+        satellite_altitude = 705 # km
+        scan_angle = calc.calculatesScanAngleMODIS(amount_row_measurements = row_measurements, height= satellite_altitude, pixel_nadir= pixel_nadir, row_number = np.array(shapefile["sample"]))
+        pixel_sizes = calc.calculatesPixelSizeMODIS(scan_angle, satellite_altitude, pixel_nadir)
+        
+        
+    # Convert the pixels size from km to meters
+    pixel_sizes["delta_scanline"] = pixel_sizes["delta_scanline"] * 1000
+    pixel_sizes["delta_trackline"] = pixel_sizes["delta_trackline"] * 1000
+
+    # Makes multipoints from the size
+    geometry = np.array(shapefile.geometry)
+    new_geometry = []
+    
+    for index in range(len(shapefile.geometry)):
+        leftupper_point = Point(geometry[index].x - pixel_sizes["delta_scanline"][index] / 2, geometry[index].y + pixel_sizes["delta_trackline"][index] / 2)
+        rightdown_point = Point(geometry[index].x + pixel_sizes["delta_scanline"][index] / 2, geometry[index].y - pixel_sizes["delta_trackline"][index] / 2)
+        new_geometry.append(MultiPoint(points=[leftupper_point, rightdown_point]).envelope)
+    
+    # Makes pixel from the points
+    shapefile.geometry = np.array(new_geometry)
 
     # Save the data shape per day
-    combined_shapefile = ngpd.unary_union_by_day(shapefile, "yyyymmdd", 'EPSG:28992')
-    
-    transformation_data = []
+    combined_shapefile = ngpd.unary_union_by_day(shapefile, 'EPSG:28992')
 
-    if (len(combined_shapefile.geometry) == 0):
-        continue
+    # Add dates       
+    transformation_data = []
     
     masked_data, transformation_meta = mask(raster, combined_shapefile.geometry, crop=False, nodata=None)
     out_meta = raster.meta.copy()
@@ -85,6 +131,6 @@ for filename in files:
     # Saving Shapefile
     combined_shapefile.to_file(save_map_shapefile + "\\burned_areas_" + filename[:-4] + ".shp")
     del masked_data
-    
 
-    # %%
+
+# %%

@@ -4,16 +4,21 @@ from shapely.geometry import shape
 import pyproj
 
 
-def unary_union_by_day(shapefile, column_name_date, projection):
-    shapefile = shapefile.groupby(column_name_date)
+def unary_union_by_day(shapefile, projection):
+    unionized = pd.DataFrame(columns=["geometry", "surface_area"]) 
 
-    unionized = pd.DataFrame(columns=["day", "geometry", "surface_area"]) 
-
-    for day, group in shapefile:
-        combined_polygon = group.unary_union
-        unionized = unionized.append({"day": day, 
-                                    "geometry": combined_polygon,
-                                    "surface_area": shape(combined_polygon).area },
+    unionized_polygons = shapefile.geometry.unary_union
+    seperated_shapes = None
+    
+    if unionized_polygons.geom_type == 'MultiPolygon':
+        seperated_shapes = [polygon for polygon in unionized_polygons]
+    else:
+        seperated_shapes = [unionized_polygons]
+        
+    for polygon in seperated_shapes:
+        unionized = unionized.append({
+                                    "geometry": polygon,
+                                    "surface_area": shape(polygon).area },
                                     ignore_index=True)
         
     unionized = gpd.GeoDataFrame(unionized, 
