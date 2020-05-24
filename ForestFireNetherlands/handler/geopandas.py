@@ -18,7 +18,7 @@ def unary_union_by_day(shapefile, projection):
     for polygon in seperated_shapes:
         unionized = unionized.append({
                                     "geometry": polygon,
-                                    "surface_area": shape(polygon).area },
+                                    "area": shape(polygon).area },
                                     ignore_index=True)
         
     unionized = gpd.GeoDataFrame(unionized, 
