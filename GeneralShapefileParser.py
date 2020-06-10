@@ -1,3 +1,9 @@
+"""
+VNP14IMG resolution = 375 m
+VNP14 resolution = 750 m 
+MODIS res = 1 km 
+"""
+
 #%% Load Packages
 import ForestFireNetherlands as FFN
 import ForestFireNetherlands.service.SatelliteDataService as SatelliteDataService
@@ -16,12 +22,10 @@ import pandas as pd
 import geopandas
 
 pathname = "E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\MODIS\\OriginalData"
-# pathname = "E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\VIIRS\\OriginalData"
-os.chdir(pathname)
+# pathname = "E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\VIIRS750M\\OriginalData"
+# pathname = "E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\VIIRS375M\\OriginalData"
 
-#%% Loading Corina file 
-raster_pathname = "E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\clc2018_clc2018_v2018_20_raster100m\\NederlandCorine.tif"
-raster = rasterio.open(raster_pathname)
+os.chdir(pathname)
 
 #%% Loads the borders of the Netherlands
 shapefile_the_netherlands = geopandas.read_file("C:\\Users\\Coen\\Documents\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\shapefile_border_netherlands\\bordernetherlands.shp")
@@ -31,11 +35,9 @@ files = os.listdir()
 satellite_data_files = []
 
 # Path where to save the files
-save_map_raster = "E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\MODIS\\ParsedRasterData" # MODIS
-# save_map_raster = "E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\VIIRS\\ParsedRasterData" # VIIRS
 save_map_shapefile = "E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\MODIS\\ParsedShapeFile" # MODIS
-# save_map_shapefile = "E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\VIIRS\\ParsedShapeFile" # VIIRS
-
+# save_map_shapefile = "E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\VIIRS750M\\ParsedShapeFile" # VIIRS
+# save_map_shapefile = "E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\VIIRS375M\\ParsedShapeFile" # MODIS
 delimiter_modis = " " # MODIS
 delimiter_viirs = "," # VIIRS 750m
 
@@ -44,7 +46,9 @@ latitude = [50.75, 53.7] # max and min latitude of the Netherlands in degrees ba
 
 # Sets if the file is Modis or VIIRS file 
 satellite = "MODIS"
+# satellite = "VIIRS"
 
+final_shapefile = None
 
 for filename in files:
     print(filename)
@@ -83,7 +87,12 @@ for filename in files:
         row_measurements = 3200
         pixel_nadir = 0.750 # km
         satellite_altitude = 833 # km
+        if "375" in pathname:
+            pixel_nadir = 0.375
+            row_measurements = 6400
+
         pixel_sizes = calc.calculatesPixelSizeVIIRS(shapefile["sample"], pixel_nadir, row_measurements)
+
     elif satellite == "MODIS":
         row_measurements = 1354
         pixel_nadir = 1 # km
@@ -109,28 +118,18 @@ for filename in files:
     shapefile.geometry = np.array(new_geometry)
 
     # Save the data shape per day
-    combined_shapefile = ngpd.unary_union_by_day(shapefile, 'EPSG:28992')
+    # combined_shapefile = ngpd.unary_union_by_day(shapefile, 'EPSG:28992')
+    filename = filename.split(".")
 
-    # # Add dates       
-    # transformation_data = []
-    
-    # masked_data, transformation_meta = mask(raster, combined_shapefile.geometry, crop=False, nodata=None)
-    # out_meta = raster.meta.copy()
+    shapefile = pd.DataFrame({"area": shapefile.geometry.area, "year": filename[1][:4], "month": filename[1][4:], "geometry": shapefile.geometry })
+    # Adds to dataframe 
+    if final_shapefile is None:
+        final_shapefile = geopandas.GeoDataFrame(shapefile, geometry=shapefile.geometry, crs=pyproj.CRS('EPSG:28992'))
+    else:
+        final_shapefile = final_shapefile.append(geopandas.GeoDataFrame(shapefile, geometry=shapefile.geometry))
 
-    # window = get_data_window(raster.read(1, masked=True))
-    # out_meta.update({"driver": "GTiff",
-    #                  "count": masked_data.shape[0],
-    #                  "height": masked_data.shape[1],
-    #                  "width": masked_data.shape[2],
-    #                  "transform": transformation_meta })
-
-    # # Saving rasterdata to correct map
-    # with rasterio.open(save_map_raster + "\\landuse_" + filename[:-4] + ".tif", "w", **out_meta) as dest:
-    #     dest.write(masked_data)
-    
-    # Saving Shapefile
-    combined_shapefile.to_file(save_map_shapefile + "\\burned_areas_" + filename[:-4] + ".shp")
-    # del masked_data
+# Saving Shapefile
+final_shapefile.to_file(save_map_shapefile + "\\burned_areas_MODIS.shp")
 
 
 # %%

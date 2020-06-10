@@ -9,24 +9,30 @@ import numpy as np
 from rasterio.mask import mask
 
 def shapefile_list_parser(list_files):
-    return [file for file in list_files if file.endswith(".shp")]
+    return [file for file in list_files if file.endswith(".shp") and "filtered" in file]
     
 base_dictiornary = "E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project"
 os.chdir(base_dictiornary)
 
 modis_shapefile_path = base_dictiornary + "\\Files\\MODIS\\ParsedShapeFile"
-viirs_shapefile_path = base_dictiornary + "\\Files\\VIIRS\\ParsedShapefile"
+viirs_shapefile_path_big = base_dictiornary + "\\Files\\VIIRS750M\\ParsedShapefile"
+viirs_shapefile_path_small = base_dictiornary + "\\Files\\VIIRS375M\\ParsedShapefile"
+
 list_shapefile_modis = os.listdir(modis_shapefile_path)
 list_shapefile_modis = shapefile_list_parser(list_shapefile_modis)
 
-list_shapefile_viirs = os.listdir(viirs_shapefile_path)
-list_shapefile_viirs = shapefile_list_parser(list_shapefile_viirs)
+list_shapefile_viirs_big = os.listdir(viirs_shapefile_path_big)
+list_shapefile_viirs_big = shapefile_list_parser(list_shapefile_viirs_big)
+
+list_shapefile_viirs_small = os.listdir(viirs_shapefile_path_small)
+list_shapefile_viirs_small = shapefile_list_parser(list_shapefile_viirs_small)
+
 
 # %% Legend Data
 legend = pd.read_csv('E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\clc2018_clc2018_v2018_20_raster100m\\Legend\\CLC2018_CLC2018_V2018_20_QGIS.txt', sep=",", header=None)
 legend.columns = ["id",  "r", "g", "b", "greyscale", "description"]
 
-# %% SHAPEFILE ANALYSIS
+# %% LOADING SHAPEFILES
 def loading_shapefiles(shapefiles, path):
 
     shapefile_loaded_all = None    
@@ -37,12 +43,6 @@ def loading_shapefiles(shapefiles, path):
         # Masks and make the right projection from the data
         shapefile_loaded = gpd.read_file(path + "\\" + shapefile)
 
-        timestamp = shapefile.split(".")[1]
-        year = str(timestamp)[:4]
-        month = str(timestamp)[4:]
-        shapefile_loaded["year"] = year
-        shapefile_loaded["month"] = month
-
         if shapefile_loaded_all is None:
             shapefile_loaded_all = shapefile_loaded
         else:
@@ -50,42 +50,13 @@ def loading_shapefiles(shapefiles, path):
     
     return shapefile_loaded_all
 
-shapefiles_loaded_viirs = loading_shapefiles(shapefiles=list_shapefile_viirs, path=viirs_shapefile_path)
+shapefiles_loaded_viirs_big = loading_shapefiles(shapefiles=list_shapefile_viirs_big, path=viirs_shapefile_path_big)
+shapefiles_loaded_viirs_small = loading_shapefiles(shapefiles=list_shapefile_viirs_small, path=viirs_shapefile_path_small)
 shapefiles_loaded_modis = loading_shapefiles(shapefiles=list_shapefile_modis, path=modis_shapefile_path)
 
 # %% LOADS THE NETHERLANDS RASTERFILE
 raster_pathname = "E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\clc2018_clc2018_v2018_20_raster100m\\NederlandCorine.tif"
 landcover_the_netherlands = rasterio.open(raster_pathname)
-
-def sort_pixel_value(polygons, raster, upper_boundary = None, lower_boundary = None):
-    """
-    Sorts the data on basis of the most prominent pixels which are selected on basis of the upper and lower boundary
-    """
-
-    sorted_data = {"raster": [], "area": []}
-
-    for polygon in polygons:
-        data_polygon_masked, transformation_meta = mask(raster, [polygon], crop=True)
-        data_polygon_masked = np.squeeze(data_polygon_masked)
-        
-        data_mask_outside_boundary = data_polygon_masked >= 0
-        
-        total_cells = np.sum(data_mask_outside_boundary) / 2
-        
-        if lower_boundary is not None:
-            data_mask_outside_boundary = ((data_polygon_masked < lower_boundary) | data_mask_outside_boundary)
-
-        if upper_boundary is not None:
-            data_mask_outside_boundary = (data_polygon_masked > upper_boundary | data_mask_outside_boundary)
-                    
-        data_filtered = data_polygon_masked[data_mask_outside_boundary]
-
-        if total_cells <= np.sum(data_mask_outside_boundary) and len(data_filtered) > 0:
-            sorted_data["raster"].append(list(data_filtered))
-            sorted_data["area"].append(polygon.area)
-            
-    sorted_data = pd.DataFrame.from_dict(sorted_data)
-    return sorted_data
 
 
 # %% ANALYSIS SURFACE SIZE
@@ -96,101 +67,214 @@ def yearly_burned_area(dataframe):
     """
     parsed_years = {}
     for year, data in dataframe:
-        corrected_geometry = sort_pixel_value(polygons=data.geometry, 
-                                            raster=landcover_the_netherlands, 
-                                            lower_boundary=100, 
-                                            upper_boundary=200)
-        total_burned_area = np.sum(corrected_geometry["area"]) / (1000**2) # km^2 
+        total_burned_area = np.sum(data.area) / (1000**2) # km^2 
         parsed_years[year] = total_burned_area
     
     return parsed_years
 
-viirs_yearly_burned_area = yearly_burned_area(dataframe=shapefiles_loaded_viirs.groupby("year"))
+viirs_big_yearly_burned_area = yearly_burned_area(dataframe=shapefiles_loaded_viirs_big.groupby("year"))
+viirs_small_yearly_burned_area = yearly_burned_area(dataframe=shapefiles_loaded_viirs_small.groupby("year"))
 modis_yearly_burned_area = yearly_burned_area(dataframe=shapefiles_loaded_modis.groupby("year"))
 
 # %% LAND COVER 
-def effected_land_cover(dataframe, raster):
+def sum_effected_land_cover(dataframe, raster):
 
     parsed_years = {}
 
     for year, data in dataframe:
-        corrected_geometry = sort_pixel_value(polygons=data.geometry, 
-                                                  raster=landcover_the_netherlands, 
-                                                  lower_boundary=100, 
-                                                  upper_boundary=200)
 
         # Get all the unique values from all the arrays
-        landcover_values = np.array(sum(list(corrected_geometry["raster"]), []))
+        selected_raster_data, meta = mask(raster, data.geometry, crop=True)
+        filtered_raster_data = selected_raster_data[selected_raster_data > 0]
+        landcover_values = np.unique(filtered_raster_data)
         data_sorted_landcover = {}
-        for landcover_value in np.unique(landcover_values):
+
+        for landcover_value in landcover_values:
             if landcover_value in data_sorted_landcover.keys():
-                data_sorted_landcover[landcover_value] += len(landcover_values[landcover_values == landcover_value])
+                data_sorted_landcover[landcover_value] += len(filtered_raster_data[filtered_raster_data == landcover_value])
             else:
-                data_sorted_landcover[landcover_value] = len(landcover_values[landcover_values == landcover_value])
+                data_sorted_landcover[landcover_value] = len(filtered_raster_data[filtered_raster_data == landcover_value])
 
         parsed_years[year] = data_sorted_landcover
     
     return parsed_years
 
-viirs_yearly_burned_land_cover = effected_land_cover(dataframe=shapefiles_loaded_viirs.groupby("year"), raster=landcover_the_netherlands)
-modis_yearly_burned_land_cover = effected_land_cover(dataframe=shapefiles_loaded_modis.groupby("year"), raster=landcover_the_netherlands)
+viirs_big_yearly_burned_land_cover = sum_effected_land_cover(dataframe=shapefiles_loaded_viirs_big.groupby("year"), raster=landcover_the_netherlands)
+viirs_small_yearly_burned_land_cover = sum_effected_land_cover(dataframe=shapefiles_loaded_viirs_small.groupby("year"), raster=landcover_the_netherlands)
+modis_yearly_burned_land_cover = sum_effected_land_cover(dataframe=shapefiles_loaded_modis.groupby("year"), raster=landcover_the_netherlands)
 
 # %% PLOT BURNED AREA AND 
 fig, axs = plt.subplots(1, 1, figsize=(9, 3))
-axs.plot(list(viirs_yearly_burned_area.keys()), list(viirs_yearly_burned_area.values()), label="VIIRS")
+axs.plot(list(viirs_small_yearly_burned_area.keys()), list(viirs_small_yearly_burned_area.values()), label="VIIRS375M")
+axs.plot(list(viirs_big_yearly_burned_area.keys()), list(viirs_big_yearly_burned_area.values()), label="VIIRS750M")
 axs.plot(list(modis_yearly_burned_area.keys()), list(modis_yearly_burned_area.values()), label="MODIS")
 axs.legend()
 axs.set_ylabel("km^2")
 axs.set_xlabel("Time")
-fig.savefig('test.png', bbox_inches="tight", dpi=300)
+fig.suptitle("Total Burned Area Yearly")
+fig.savefig('burned_area_total_yearly_v1.png', bbox_inches="tight", dpi=400)
 
 # %% PLOTS LAND COVER
 
-max_values = set(sum([list(data.keys()) for data in list(viirs_yearly_burned_land_cover.values())], []))
-fig, axs = plt.subplots(1, 2, figsize=(18, 9))
-label_count = np.arange(len(viirs_yearly_burned_land_cover.keys())) + 1
+fig, axs = plt.subplots(1, 3, figsize=(18, 9), sharey=True)
+label_count = np.arange(len(viirs_big_yearly_burned_land_cover.keys())) + 1
 width = 0.5
 
-for count, value in enumerate(max_values):
+def bar_plot(satellite_data, legend, subplot):
+    max_values = [] 
 
-    bar_values = []
-    for land_cover_data in viirs_yearly_burned_land_cover.values():  
+    # Gets the unique values of the satellite data
+    for data in list(satellite_data.values()):
+        max_values.extend(data)
+    max_values = np.unique(np.array(max_values))
 
+    bottom = None
 
-        if value in land_cover_data:
-            bar_values.append(land_cover_data[value])
-        else: 
-            bar_values.append(0) 
+    for count, value in enumerate(max_values):
+        bar_values = []
 
-    color = legend.loc[legend["id"] == value]
-    axs[0].bar(label_count, np.array(bar_values), width, color=[(list(color["r"])[0] / 255, list(color["g"])[0] / 255, list(color["b"])[0] / 255, 1)])
+        for land_cover_data in satellite_data.values():  
+                   
+            if value in land_cover_data:
+                bar_values.append(land_cover_data[value])
+            else: 
+                bar_values.append(0) 
+
+        color = legend.loc[legend["id"] == value]
+        if (bottom is None):
+            subplot.bar(label_count, np.array(bar_values), width, 
+            color=[(list(color["r"])[0] / 255, list(color["g"])[0] / 255, list(color["b"])[0] / 255, 1)],
+            label=list(color["description"])[0])
+            bottom = np.array(bar_values)
+        else:
+            subplot.bar(label_count, np.array(bar_values), width, 
+            color=[(list(color["r"])[0] / 255, list(color["g"])[0] / 255, list(color["b"])[0] / 255, 1)],
+            label=list(color["description"])[0], bottom=bottom)
+            bottom += np.array(bar_values)
+
+    
+    return subplot
+
+axs[0] = bar_plot(viirs_small_yearly_burned_land_cover, legend, axs[0])    
+axs[0].set_title("VIIRS 375M")
 axs[0].set_xticks(label_count)
-axs[0].set_xticklabels(list(viirs_yearly_burned_land_cover.keys()))
+axs[0].set_xticklabels(list(viirs_small_yearly_burned_land_cover.keys()))
 
-max_values = set(sum([list(data.keys()) for data in list(modis_yearly_burned_land_cover.values())], []))
+label_count = np.arange(len(viirs_big_yearly_burned_land_cover.keys())) + 1
+axs[1] = bar_plot(viirs_big_yearly_burned_land_cover, legend, axs[1])
+axs[1].set_title("VIIRS 750M")    
+axs[1].set_xticks(label_count)
+axs[1].set_xticklabels(list(viirs_big_yearly_burned_land_cover.keys()))
+
 label_count = np.arange(len(modis_yearly_burned_land_cover.keys()))
 
-for count, value in enumerate(max_values):
+axs[2] = bar_plot(modis_yearly_burned_land_cover, legend, axs[2])    
+axs[2].set_title("MODIS")
+axs[2].set_xticks(label_count)
+axs[2].set_xticklabels(list(modis_yearly_burned_land_cover.keys()))
+axs[2].legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
 
-    bar_values = []
-    for land_cover_data in modis_yearly_burned_land_cover.values():  
+fig.tight_layout()
+fig.suptitle("Total LandCover yearly")
+fig.savefig('land_cover_total_yearly_v1.png', bbox_inches="tight", dpi=300)
 
 
-        if value in land_cover_data:
-            bar_values.append(land_cover_data[value])
-        else: 
-            bar_values.append(0) 
-    color = legend.loc[legend["id"] == value]
-    axs[1].bar(label_count, np.array(bar_values), width, 
-    color=[(list(color["r"])[0] / 255, list(color["g"])[0] / 255, list(color["b"])[0] / 255, 1)],
-    label=list(color["description"])[0])
+# %% MONTHLY ANALYSIS
+
+# First attempt
+def mean_landcover(dataframe, raster):
+    
+    parsed_keys = {}
+
+    for key, data in dataframe:
+
+        # Get all the unique values from all the arrays
+        selected_raster_data, meta = mask(raster, data.geometry, crop=True)
+        filtered_raster_data = selected_raster_data[selected_raster_data > 0]
+        landcover_values = np.unique(filtered_raster_data)
+        data_sorted_landcover = {}
+
+        for landcover_value in landcover_values:
+            if landcover_value in data_sorted_landcover.keys():
+                data_sorted_landcover[landcover_value] += len(filtered_raster_data[filtered_raster_data == landcover_value])
+            else:
+                data_sorted_landcover[landcover_value] = len(filtered_raster_data[filtered_raster_data == landcover_value])
+
+        parsed_keys[key] = data_sorted_landcover
+
+    calculated_mean_data = {}
+    for key, landcover in parsed_keys.items():
+        new_values = {}
+        
+        for key, values in landcover.items():
+            calculated_value = int(values) / len(dataframe.groups.keys())
+            
+            new_values[key] = calculated_value
+        
+        calculated_mean_data[key] = new_values
+    
+    return parsed_keys
+
+viirs_small_monthly_mean_land_cover = mean_landcover(shapefiles_loaded_viirs_small.groupby("month"), raster=landcover_the_netherlands)
+viirs_big_monthly_mean_land_cover = mean_landcover(shapefiles_loaded_viirs_big.groupby("month"), raster=landcover_the_netherlands)
+modis_monthly_mean_land_cover = mean_landcover(shapefiles_loaded_modis.groupby("month"), raster=landcover_the_netherlands)
+
+# %% Plots the monthly data
+fig, axs = plt.subplots(1, 3, figsize=(18, 9), sharey=True)
+label_count = np.arange(len(viirs_small_monthly_mean_land_cover.keys())) + 1
+width = 0.5
+
+axs[0] = bar_plot(viirs_small_monthly_mean_land_cover, legend, axs[0])    
+axs[0].set_title("VIIRS 375M")
+axs[0].set_xticks(label_count)
+axs[0].set_xticklabels(list(viirs_small_monthly_mean_land_cover.keys()))
+
+label_count = np.arange(len(viirs_big_monthly_mean_land_cover.keys())) + 1
+axs[1] = bar_plot(viirs_big_monthly_mean_land_cover, legend, axs[1])
+axs[1].set_title("VIIRS 750M")    
 axs[1].set_xticks(label_count)
-axs[1].set_xticklabels(list(modis_yearly_burned_land_cover.keys()))
-axs[1].legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
+axs[1].set_xticklabels(list(viirs_big_monthly_mean_land_cover.keys()))
+
+label_count = np.arange(len(modis_monthly_mean_land_cover.keys()))
+
+axs[2] = bar_plot(modis_monthly_mean_land_cover, legend, axs[2])    
+axs[2].set_title("MODIS")
+axs[2].set_xticks(label_count)
+axs[2].set_xticklabels(list(modis_monthly_mean_land_cover.keys()))
+axs[2].legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
+fig.suptitle("Mean Landcover Monthly")
 fig.tight_layout()
 
-fig.savefig('land_cover_yearly.png')
- # %%
+fig.savefig('land_cover_mean_monthly_v1.png', bbox_inches="tight", dpi=300)
+
+# %% MONTHLY BURNED AREA 
+def mean_burned_area(dataframe):
+    parsed_key = {}
+
+    for key, data in dataframe:
+        total_burned_area = np.sum(data.area) / (1000**2) # km^2 
+        parsed_key[key] = total_burned_area
+    
+    for key, data in parsed_key.items():
+        parsed_key[key] = parsed_key[key] / len(dataframe.groups.keys())
+
+    return parsed_key
+
+viirs_small_monthly_mean_burned_area = mean_burned_area(shapefiles_loaded_viirs_small.groupby("month"))
+viirs_big_monthly_mean_burned_area = mean_burned_area(shapefiles_loaded_viirs_big.groupby("month"))
+modis_monthly_burned_area = mean_burned_area(shapefiles_loaded_modis.groupby("month"))
+
+# %% Plots the monthly average burned area
+
+fig, axs = plt.subplots(1, 1, figsize=(9, 3))
+axs.plot(list(viirs_small_monthly_mean_burned_area.keys()), list(viirs_small_monthly_mean_burned_area.values()), label="VIIRS375M")
+axs.plot(list(viirs_big_monthly_mean_burned_area.keys()), list(viirs_big_monthly_mean_burned_area.values()), label="VIIRS750M")
+axs.plot(list(modis_monthly_burned_area.keys()), list(modis_monthly_burned_area.values()), label="MODIS")
+axs.legend()
+fig.suptitle("Mean Burned Area monthly")
+axs.set_ylabel("km^2")
+axs.set_xlabel("Time")
+fig.savefig('burned_area_mean_monthly_v1.png', bbox_inches="tight", dpi=300)
 
 
 # %%
