@@ -1,4 +1,9 @@
-# %% LOADING THE FILES
+"""
+This file is made for the visualization of the data.
+Furthermore, it highlights different time scales 
+
+"""
+# %% IMPORT LIBRARIES
 import rasterio
 import geopandas as gpd
 import pandas as pd
@@ -8,6 +13,7 @@ import os
 import numpy as np
 from rasterio.mask import mask
 
+# %% LOAD THE FILES
 def shapefile_list_parser(list_files):
     return [file for file in list_files if file.endswith(".shp") and "filtered" in file]
     
@@ -277,4 +283,15 @@ axs.set_xlabel("Time")
 fig.savefig('burned_area_mean_monthly_v1.png', bbox_inches="tight", dpi=300)
 
 
-# %%
+# %% Plots the distance of the fire spot to the road
+
+shapefile_roads_and_railroads = gpd.read_file("E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\VIIRS375M\\Join_wegen\\VIIRS375M_Distance.shp")
+
+plt.hist(shapefile_roads_and_railroads['distance'], bins=20)
+plt.title("Distribution of distances of fires from roads")
+plt.xlabel("Distance (m)")
+plt.ylabel("Amount")
+plt.savefig('distance_distribution.png', bbox_inches="tight", dpi=300)
+
+
+ # %%

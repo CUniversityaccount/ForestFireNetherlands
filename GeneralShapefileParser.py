@@ -1,4 +1,5 @@
 """
+Parse the txt files of VIIRS and MODIS from the ftp database to a shapefile with filtered pixels
 VNP14IMG resolution = 375 m
 VNP14 resolution = 750 m 
 MODIS res = 1 km 
