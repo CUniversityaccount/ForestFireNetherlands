@@ -22,9 +22,9 @@ import pyproj
 import pandas as pd
 import geopandas
 
-pathname = "E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\MODIS\\OriginalData"
+# pathname = "E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\MODIS\\OriginalData"
 # pathname = "E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\VIIRS750M\\OriginalData"
-# pathname = "E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\VIIRS375M\\OriginalData"
+pathname = "F:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\VIIRS375M\\OriginalData"
 
 os.chdir(pathname)
 
@@ -36,9 +36,7 @@ files = os.listdir()
 satellite_data_files = []
 
 # Path where to save the files
-save_map_shapefile = "E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\MODIS\\ParsedShapeFile" # MODIS
-# save_map_shapefile = "E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\VIIRS750M\\ParsedShapeFile" # VIIRS
-# save_map_shapefile = "E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\VIIRS375M\\ParsedShapeFile" # MODIS
+save_map_shapefile = "F:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\VIIRS375M\\ParsedShapeFile" # VIIRS 375M
 delimiter_modis = " " # MODIS
 delimiter_viirs = "," # VIIRS 750m
 
@@ -46,8 +44,8 @@ longitude = [3.2 ,7.22] # max and min longitude of the Netherlands in degrees ba
 latitude = [50.75, 53.7] # max and min latitude of the Netherlands in degrees based on EPSG:28992
 
 # Sets if the file is Modis or VIIRS file 
-satellite = "MODIS"
-# satellite = "VIIRS"
+# satellite = "MODIS"
+satellite = "VIIRS"
 
 final_shapefile = None
 
@@ -62,13 +60,24 @@ for filename in files:
 
     satellite_data = SatelliteDataService.get_satellite_object_txt(filepath=filename, 
                                                                     delimiter=delimiter)
-    
-    # Data filter
+
+    # Filtering based on the location
     longitude_query = 'lon > ' + str(longitude[0]) + ' and lon < ' + str(longitude[-1])
     latitude_query = 'lat > ' + str(latitude[0]) + ' and lat < ' + str(latitude[-1])
     satellite_data.query(longitude_query + ' and ' + latitude_query, inplace = True)
 
-    # Adds shapes
+    # Filtering based on type
+    satellite_data.query('type == 0', inplace = True) # Type 0 = presumed vegetation data
+
+    # checks 
+    if satellite_data.empty:
+        print("No fire pixels")
+        continue
+
+    # Change pixel area to m^2
+    satellite_data.pixarea = satellite_data.pixarea * (1000 ** 2)
+    print(satellite_data)
+    # Makes the longitude and the latitude to a point
     satellite_data['geometry'] = satellite_data.apply(lambda x: Point((float(x.lon), float(x.lat))), axis=1)
 
     # Masks and make the right projection from the data
@@ -122,7 +131,13 @@ for filename in files:
     # combined_shapefile = ngpd.unary_union_by_day(shapefile, 'EPSG:28992')
     filename = filename.split(".")
 
-    shapefile = pd.DataFrame({"area": shapefile.geometry.area, "year": filename[1][:4], "month": filename[1][4:], "geometry": shapefile.geometry })
+    shapefile = pd.DataFrame({
+        "area": shapefile.pixarea, 
+        "year": filename[1][:4], 
+        "month": filename[1][4:], 
+        "geometry": shapefile.geometry 
+    })
+    
     # Adds to dataframe 
     if final_shapefile is None:
         final_shapefile = geopandas.GeoDataFrame(shapefile, geometry=shapefile.geometry, crs=pyproj.CRS('EPSG:28992'))
@@ -131,6 +146,5 @@ for filename in files:
 
 # Saving Shapefile
 final_shapefile.to_file(save_map_shapefile + "\\burned_areas_MODIS.shp")
-
 
 # %%
