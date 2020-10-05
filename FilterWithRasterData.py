@@ -5,6 +5,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import ForestFireNetherlands.service.SatelliteDataService as SatelliteDataService
 import os
+import uuid 
 
 import numpy as np
 from rasterio.mask import mask
@@ -58,36 +59,50 @@ def filter_pixels_with_land_cover_data(dataframe_polygons, raster, upper_boundar
     sorted_data = pd.DataFrame(data=None, columns=dataframe_polygons.columns)
 
     for index, polygon in dataframe_polygons.iterrows():
+
         raster_data, transformation_meta = mask(raster, [polygon.geometry], crop=True)
         raster_data = np.squeeze(raster_data)
-        
-        # All the cells with no data water in it
-        full_array_size = raster_data.size.copy()       
-        raster_mask_boundaries = (raster_data < 500)
+        raster_mask_boundaries = ((raster_data > 0) & (raster_data < 500))
+
         raster_data = raster_data[raster_mask_boundaries]
 
         if raster_data.size == 0:
             print("The pixel has only water")
             continue
-
+        
+        # First checks if there is any city or industrial in the pixel, because then it is unsure if the fire was an wild or natural fire
         if (any(raster_data < 200)):
-            print("Has urban and industry in the pixel")
             continue
+
         # Get the most frequent land_cover in the values 
         (land_cover_values, counts) = np.unique(raster_data ,return_counts=True)
-        land_cover_index = np.argmax(counts)
+        land_cover_mask = (counts == np.max(counts))
 
-        if (all(land_cover_values < 300)):
-            print("Agricultural ground")
+        if (all(land_cover_values < 300) or all(land_cover_values[land_cover_mask] < 300)):
             continue
-
-        print(raster_data)
-        print(land_cover_values)
-        print(land_cover_index)
-
         
+        # Same problem as the urban filter
+        if (land_cover_values[land_cover_mask].size > 1 and any(land_cover_values < 300)):
+            print("Unsure if it is nature or agriculture")
+            continue
+        
+        polygon['id'] = str(uuid.uuid4())
 
-        # ]
+        # Nature qualifications by Corine Land Cover (CLC)
+        if (all(land_cover_values[land_cover_mask] > 310) and all(land_cover_values[land_cover_mask] < 320)):
+            polygon['firetype'] = 'forest'
+        elif (all(land_cover_values[land_cover_mask] > 320) and all(land_cover_values[land_cover_mask] < 330)):
+            polygon['firetype'] = 'heath'
+        elif (all(land_cover_values[land_cover_mask] == 331)):
+            polygon['firetype'] = 'dune'
+        elif (all(land_cover_values[land_cover_mask] > 410) and all(land_cover_values[land_cover_mask] < 420)):
+            polygon['firetype'] = 'peat'
+        elif (len(land_cover_values[land_cover_mask]) > 1 and all((land_cover_values > 300) & (land_cover_values < 332))): 
+            polygon['firetype'] = 'combined nature'
+
+        if 'firetype' in list(polygon.keys()):
+            print("Polygon added")
+            sorted_data = sorted_data.append(polygon)
 
         # if len(data_filtered) > total_cells:
         #     sorted_data = sorted_data.append(polygon)
@@ -106,11 +121,8 @@ shapefiles_loaded_viirs_375m =  filter_pixels_with_land_cover_data(dataframe_pol
 #                                             raster=landcover_the_netherlands, 
 #                                             lower_boundary=100, 
 #                                             upper_boundary=200)
-
-sys.exit()
-# %%
 # gpd.GeoDataFrame(shapefiles_loaded_viirs_big, geometry=shapefiles_loaded_viirs_big.geometry, crs=pyproj.CRS('EPSG:28992')).to_file(viirs_shapefile_path_big + "//filtered_pixels_VIIRS_750M.shp")
-gpd.GeoDataFrame(shapefiles_loaded_viirs_small, geometry=shapefiles_loaded_viirs_small.geometry, crs=pyproj.CRS('EPSG:28992')).to_file(viirs_shapefile_path_375m + "//filtered_pixels_VIIRS_375M.shp")
+gpd.GeoDataFrame(shapefiles_loaded_viirs_375m, geometry=shapefiles_loaded_viirs_375m.geometry, crs=pyproj.CRS('EPSG:28992')).to_file(viirs_shapefile_path_375m + "//filtered_pixels_VIIRS_375M_v2.shp")
 # gpd.GeoDataFrame(shapefiles_loaded_modis, geometry=shapefiles_loaded_modis.geometry, crs=pyproj.CRS('EPSG:28992')).to_file(modis_shapefile_path + "//filtered_pixels_MODIS.shp")
 
 # %%
