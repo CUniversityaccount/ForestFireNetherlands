@@ -12,33 +12,38 @@ import ForestFireNetherlands.service.SatelliteDataService as SatelliteDataServic
 import os
 import numpy as np
 from rasterio.mask import mask
+import datetime
 
-# %% LOAD THE FILES
+# Month parser for easier date parsing 
+months_choices = {}
+for i in range(1,13):
+    month = str(i)
+    if (i < 10):
+        month = "0" + str(i)
+
+    months_choices[month] = datetime.date(2008, i, 1).strftime('%B')
+
+# Firetypes
+firetypes = ['forest', 'heath', 'peat', 'dune', 'combined nature']
+# Load the shapefiles
 def shapefile_list_parser(list_files):
-    return [file for file in list_files if file.endswith(".shp") and "filtered" in file]
+    return [file for file in list_files if file.endswith(".shp") and "filtered" in file and "v2" in file]
     
-base_dictiornary = "E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project"
+base_dictiornary = "F:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project"
 os.chdir(base_dictiornary)
 
-modis_shapefile_path = base_dictiornary + "\\Files\\MODIS\\ParsedShapeFile"
-viirs_shapefile_path_big = base_dictiornary + "\\Files\\VIIRS750M\\ParsedShapefile"
 viirs_shapefile_path_small = base_dictiornary + "\\Files\\VIIRS375M\\ParsedShapefile"
 
-list_shapefile_modis = os.listdir(modis_shapefile_path)
-list_shapefile_modis = shapefile_list_parser(list_shapefile_modis)
+# list_shapefile_modis = os.listdir(modis_shapefile_path)
+# list_shapefile_modis = shapefile_list_parser(list_shapefile_modis)
 
-list_shapefile_viirs_big = os.listdir(viirs_shapefile_path_big)
-list_shapefile_viirs_big = shapefile_list_parser(list_shapefile_viirs_big)
+# list_shapefile_viirs_big = os.listdir(viirs_shapefile_path_big)
+# list_shapefile_viirs_big = shapefile_list_parser(list_shapefile_viirs_big)
 
 list_shapefile_viirs_small = os.listdir(viirs_shapefile_path_small)
 list_shapefile_viirs_small = shapefile_list_parser(list_shapefile_viirs_small)
 
-
-# %% Legend Data
-legend = pd.read_csv('E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\clc2018_clc2018_v2018_20_raster100m\\Legend\\CLC2018_CLC2018_V2018_20_QGIS.txt', sep=",", header=None)
-legend.columns = ["id",  "r", "g", "b", "greyscale", "description"]
-
-# %% LOADING SHAPEFILES
+# LOADING SHAPEFILES
 def loading_shapefiles(shapefiles, path):
 
     shapefile_loaded_all = None    
@@ -56,12 +61,18 @@ def loading_shapefiles(shapefiles, path):
     
     return shapefile_loaded_all
 
-shapefiles_loaded_viirs_big = loading_shapefiles(shapefiles=list_shapefile_viirs_big, path=viirs_shapefile_path_big)
+# shapefiles_loaded_viirs_big = loading_shapefiles(shapefiles=list_shapefile_viirs_big, path=viirs_shapefile_path_big)
 shapefiles_loaded_viirs_small = loading_shapefiles(shapefiles=list_shapefile_viirs_small, path=viirs_shapefile_path_small)
-shapefiles_loaded_modis = loading_shapefiles(shapefiles=list_shapefile_modis, path=modis_shapefile_path)
+# shapefiles_loaded_modis = loading_shapefiles(shapefiles=list_shapefile_modis, path=modis_shapefile_path)
+
+# %% Legend Data
+legend = pd.read_csv('F:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\clc2018_clc2018_v2018_20_raster100m\\Legend\\CLC2018_CLC2018_V2018_20_QGIS.txt', sep=",", header=None)
+legend.columns = ["id",  "r", "g", "b", "greyscale", "description"]
+
+
 
 # %% LOADS THE NETHERLANDS RASTERFILE
-raster_pathname = "E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\clc2018_clc2018_v2018_20_raster100m\\NederlandCorine.tif"
+raster_pathname = "F:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\clc2018_clc2018_v2018_20_raster100m\\NederlandCorine.tif"
 landcover_the_netherlands = rasterio.open(raster_pathname)
 
 
@@ -78,9 +89,9 @@ def yearly_burned_area(dataframe):
     
     return parsed_years
 
-viirs_big_yearly_burned_area = yearly_burned_area(dataframe=shapefiles_loaded_viirs_big.groupby("year"))
+# viirs_big_yearly_burned_area = yearly_burned_area(dataframe=shapefiles_loaded_viirs_big.groupby("year"))
 viirs_small_yearly_burned_area = yearly_burned_area(dataframe=shapefiles_loaded_viirs_small.groupby("year"))
-modis_yearly_burned_area = yearly_burned_area(dataframe=shapefiles_loaded_modis.groupby("year"))
+# modis_yearly_burned_area = yearly_burned_area(dataframe=shapefiles_loaded_modis.groupby("year"))
 
 # %% LAND COVER 
 def sum_effected_land_cover(dataframe, raster):
@@ -105,15 +116,11 @@ def sum_effected_land_cover(dataframe, raster):
     
     return parsed_years
 
-viirs_big_yearly_burned_land_cover = sum_effected_land_cover(dataframe=shapefiles_loaded_viirs_big.groupby("year"), raster=landcover_the_netherlands)
 viirs_small_yearly_burned_land_cover = sum_effected_land_cover(dataframe=shapefiles_loaded_viirs_small.groupby("year"), raster=landcover_the_netherlands)
-modis_yearly_burned_land_cover = sum_effected_land_cover(dataframe=shapefiles_loaded_modis.groupby("year"), raster=landcover_the_netherlands)
 
 # %% PLOT BURNED AREA AND 
 fig, axs = plt.subplots(1, 1, figsize=(9, 3))
 axs.plot(list(viirs_small_yearly_burned_area.keys()), list(viirs_small_yearly_burned_area.values()), label="VIIRS375M")
-axs.plot(list(viirs_big_yearly_burned_area.keys()), list(viirs_big_yearly_burned_area.values()), label="VIIRS750M")
-axs.plot(list(modis_yearly_burned_area.keys()), list(modis_yearly_burned_area.values()), label="MODIS")
 axs.legend()
 axs.set_ylabel("km^2")
 axs.set_xlabel("Time")
@@ -122,8 +129,8 @@ fig.savefig('burned_area_total_yearly_v1.png', bbox_inches="tight", dpi=400)
 
 # %% PLOTS LAND COVER
 
-fig, axs = plt.subplots(1, 3, figsize=(18, 9), sharey=True)
-label_count = np.arange(len(viirs_big_yearly_burned_land_cover.keys())) + 1
+fig, axs = plt.subplots(1, 1, figsize=(18, 9), sharey=True)
+label_count = np.arange(len(viirs_small_yearly_burned_land_cover.keys())) + 1
 width = 0.5
 
 def bar_plot(satellite_data, legend, subplot):
@@ -161,24 +168,11 @@ def bar_plot(satellite_data, legend, subplot):
     
     return subplot
 
-axs[0] = bar_plot(viirs_small_yearly_burned_land_cover, legend, axs[0])    
-axs[0].set_title("VIIRS 375M")
-axs[0].set_xticks(label_count)
-axs[0].set_xticklabels(list(viirs_small_yearly_burned_land_cover.keys()))
-
-label_count = np.arange(len(viirs_big_yearly_burned_land_cover.keys())) + 1
-axs[1] = bar_plot(viirs_big_yearly_burned_land_cover, legend, axs[1])
-axs[1].set_title("VIIRS 750M")    
-axs[1].set_xticks(label_count)
-axs[1].set_xticklabels(list(viirs_big_yearly_burned_land_cover.keys()))
-
-label_count = np.arange(len(modis_yearly_burned_land_cover.keys()))
-
-axs[2] = bar_plot(modis_yearly_burned_land_cover, legend, axs[2])    
-axs[2].set_title("MODIS")
-axs[2].set_xticks(label_count)
-axs[2].set_xticklabels(list(modis_yearly_burned_land_cover.keys()))
-axs[2].legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
+axs = bar_plot(viirs_small_yearly_burned_land_cover, legend, axs)    
+axs.set_title("VIIRS 375M")
+axs.set_xticks(label_count)
+axs.set_xticklabels(list(viirs_small_yearly_burned_land_cover.keys()))
+axs.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
 
 fig.tight_layout()
 fig.suptitle("Total LandCover yearly")
@@ -222,32 +216,18 @@ def mean_landcover(dataframe, raster):
     return parsed_keys
 
 viirs_small_monthly_mean_land_cover = mean_landcover(shapefiles_loaded_viirs_small.groupby("month"), raster=landcover_the_netherlands)
-viirs_big_monthly_mean_land_cover = mean_landcover(shapefiles_loaded_viirs_big.groupby("month"), raster=landcover_the_netherlands)
-modis_monthly_mean_land_cover = mean_landcover(shapefiles_loaded_modis.groupby("month"), raster=landcover_the_netherlands)
 
 # %% Plots the monthly data
-fig, axs = plt.subplots(1, 3, figsize=(18, 9), sharey=True)
+fig, axs = plt.subplots(1, 1, figsize=(18, 9), sharey=True)
 label_count = np.arange(len(viirs_small_monthly_mean_land_cover.keys())) + 1
 width = 0.5
 
-axs[0] = bar_plot(viirs_small_monthly_mean_land_cover, legend, axs[0])    
-axs[0].set_title("VIIRS 375M")
-axs[0].set_xticks(label_count)
-axs[0].set_xticklabels(list(viirs_small_monthly_mean_land_cover.keys()))
+axs = bar_plot(viirs_small_monthly_mean_land_cover, legend, axs)    
+axs.set_title("VIIRS 375M")
+axs.set_xticks(label_count)
+axs.set_xticklabels(list(viirs_small_monthly_mean_land_cover.keys()))
 
-label_count = np.arange(len(viirs_big_monthly_mean_land_cover.keys())) + 1
-axs[1] = bar_plot(viirs_big_monthly_mean_land_cover, legend, axs[1])
-axs[1].set_title("VIIRS 750M")    
-axs[1].set_xticks(label_count)
-axs[1].set_xticklabels(list(viirs_big_monthly_mean_land_cover.keys()))
-
-label_count = np.arange(len(modis_monthly_mean_land_cover.keys()))
-
-axs[2] = bar_plot(modis_monthly_mean_land_cover, legend, axs[2])    
-axs[2].set_title("MODIS")
-axs[2].set_xticks(label_count)
-axs[2].set_xticklabels(list(modis_monthly_mean_land_cover.keys()))
-axs[2].legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
+axs.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
 fig.suptitle("Mean Landcover Monthly")
 fig.tight_layout()
 
@@ -267,15 +247,15 @@ def mean_burned_area(dataframe):
     return parsed_key
 
 viirs_small_monthly_mean_burned_area = mean_burned_area(shapefiles_loaded_viirs_small.groupby("month"))
-viirs_big_monthly_mean_burned_area = mean_burned_area(shapefiles_loaded_viirs_big.groupby("month"))
-modis_monthly_burned_area = mean_burned_area(shapefiles_loaded_modis.groupby("month"))
+# viirs_big_monthly_mean_burned_area = mean_burned_area(shapefiles_loaded_viirs_big.groupby("month"))
+# modis_monthly_burned_area = mean_burned_area(shapefiles_loaded_modis.groupby("month"))
 
 # %% Plots the monthly average burned area
 
 fig, axs = plt.subplots(1, 1, figsize=(9, 3))
 axs.plot(list(viirs_small_monthly_mean_burned_area.keys()), list(viirs_small_monthly_mean_burned_area.values()), label="VIIRS375M")
-axs.plot(list(viirs_big_monthly_mean_burned_area.keys()), list(viirs_big_monthly_mean_burned_area.values()), label="VIIRS750M")
-axs.plot(list(modis_monthly_burned_area.keys()), list(modis_monthly_burned_area.values()), label="MODIS")
+# axs.plot(list(viirs_big_monthly_mean_burned_area.keys()), list(viirs_big_monthly_mean_burned_area.values()), label="VIIRS750M")
+# axs.plot(list(modis_monthly_burned_area.keys()), list(modis_monthly_burned_area.values()), label="MODIS")
 axs.legend()
 fig.suptitle("Mean Burned Area monthly")
 axs.set_ylabel("km^2")
@@ -283,11 +263,79 @@ axs.set_xlabel("Time")
 fig.savefig('burned_area_mean_monthly_v1.png', bbox_inches="tight", dpi=300)
 
 
+# %% FIRETYPE
+def bar_plot_firetype(shapefiles, subplot, time_periods, time_type):
+    max_values = [] 
+
+    # Gets the unique values of the satellite data
+    max_values = np.unique(np.array(max_values))
+
+    bottom = None
+
+    ind = np.arange(len(time_periods))
+    for firetype in firetypes[::-1]:
+        
+        bar_values = []
+        
+        if firetype not in shapefiles.groups.keys():
+            bar_values = [0] * 12
+        else:
+            values = shapefiles.get_group(firetype)
+
+            for time in time_periods:
+                
+                filtered_data = values.query(time_type + ' == "' + time +  '"')
+
+                if len(filtered_data) > 0:
+                    bar_values.append(len(filtered_data))
+                else: 
+                    bar_values.append(0) 
+                    
+        if (bottom is None):
+            subplot.bar(ind, np.array(bar_values), label=firetype, bottom=bottom)
+            bottom = np.array(bar_values)
+        else:
+            subplot.bar(ind, np.array(bar_values), label=firetype, bottom=bottom) 
+            bottom += np.array(bar_values)
+    print(bottom)
+    return subplot
+
+# %% PLOT FIGURE WITH FUNCTION
+fig, axs = plt.subplots(1, 1, figsize=(18, 9), sharey=True)
+years = list(shapefiles_loaded_viirs_small.groupby("year").groups.keys())
+axs = bar_plot_firetype(shapefiles_loaded_viirs_small.groupby("firetype"), axs, years, 'year')
+plt.xticks(np.arange(len(years)), years)
+fig.suptitle("Yearly amount of fires")    
+plt.legend()
+plt.savefig('fire_types_yearly.png', bbox_inches="tight", dpi=300)
+
+fig, axs = plt.subplots(1, 1, figsize=(18, 9), sharey=True)
+years = list(shapefiles_loaded_viirs_small.groupby("year").groups.keys())
+axs = bar_plot_firetype(shapefiles_loaded_viirs_small.groupby("firetype"), axs, list(months_choices.keys()), 'month')
+plt.xticks(np.arange(len(months_choices.values())), list(months_choices.values()))
+fig.suptitle("Monthly amount of fires")    
+plt.legend()
+plt.savefig('fire_types_monthly.png', bbox_inches="tight", dpi=300)
+
+# %% Plots the different years with land use changes
+
+viirs_data_years = shapefiles_loaded_viirs_small.groupby("year")
+fig, axs = plt.subplots(2, 4, figsize=(18, 9), sharey=True)
+axs = axs.flatten()
+for index, (year, data) in enumerate(viirs_data_years): 
+    axs[index] = bar_plot_firetype(data.groupby("firetype"), axs[index], list(months_choices.keys()), 'month')
+    axs[index].set_title(year)
+    axs[index].set_xticks(np.arange(len(months_choices.values())))
+    axs[index].set_xticklabels(list(months_choices.values()), rotation=90)
+    axs[index].legend()
+
+plt.tight_layout()
 # %% Plots the distance of the fire spot to the road
 
-shapefile_roads_and_railroads = gpd.read_file("E:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\VIIRS375M\\Join_wegen\\VIIRS375M_Distance.shp")
+# nog een 95% graden lijn van de afstand 
+shapefile_roads_and_railroads = gpd.read_file("F:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\VIIRS375M\\Join_wegen\\VIIRS375M_Distance.shp")
 
-plt.hist(shapefile_roads_and_railroads['distance'], bins=20)
+plt.hist(shapefile_roads_and_railroads['distance'], bins=20, rwidth=0.8)
 plt.title("Distribution of distances of fires from roads")
 plt.xlabel("Distance (m)")
 plt.ylabel("Amount")
