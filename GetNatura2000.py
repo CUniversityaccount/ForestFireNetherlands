@@ -3,7 +3,7 @@ Gets the Natura 2000 files
 """
 import geopandas as gpd
 import matplotlib.pyplot as plt
-  
+
 # Retrieve data from PDOK
 year = 2018  # kies hier het jaar waarin je geinteresseerd bent
 # f before string is the same as $ in c#
@@ -13,8 +13,8 @@ provincial_boundaries = gpd.read_file(geodata_url)
 print(provincial_boundaries)
 # Plot grenzen
 # fig, ax = plt.subplots(figsize=(5.5, 5.5))
-# provincial_boundaries.boundary.plot(color=None, edgecolor="k", linewidth=0.8, ax=ax) 
+# provincial_boundaries.boundary.plot(color=None, edgecolor="k", linewidth=0.8, ax=ax)
 # plt.show()
 
 # To shapefile
-provincial_boundaries.to_file("C:\\Users\\Coen\\Documents\\U
+provincial_boundaries.to_file()
