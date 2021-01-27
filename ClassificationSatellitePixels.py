@@ -3,7 +3,6 @@ import rasterio
 import geopandas as gpd
 import pandas as pd
 import matplotlib.pyplot as plt
-import ForestFireNetherlands.service.SatelliteDataService as SatelliteDataService
 import os
 import uuid
 

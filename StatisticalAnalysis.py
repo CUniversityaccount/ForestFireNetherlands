@@ -16,6 +16,12 @@ import numpy as np
 import datetime
 import seaborn as sns
 from scipy import stats
+from dotenv import load_dotenv, find_dotenv, dotenv_values
+
+load_dotenv(find_dotenv())
+base_dictiornary = os.getenv("LOCAL_STORAGE")
+
+sns.set_style("ticks", {'legend.frameon': True})
 
 # Month parser for easier date parsing
 months_choices = {}
@@ -24,7 +30,7 @@ for i in range(1, 13):
     if (i < 10):
         month = "0" + str(i)
 
-    months_choices[month] = datetime.date(2008, i, 1).strftime('%B')
+    months_choices[month] = i
 
 # Firetypes
 firetypes = ['forest', 'heath', 'peat', 'dune', 'combined nature']
@@ -35,13 +41,14 @@ def shapefile_list_parser(list_files):
     return [file for file in list_files if file.endswith(".shp") and "filtered" in file and "v2" in file]
 
 
-base_dictiornary = "F:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project"
 os.chdir(base_dictiornary)
 
 viirs_shapefile_path_small = base_dictiornary + \
     "\\Files\\VIIRS375M\\ParsedShapefile"
 
 natura2000_path = base_dictiornary + "\\Files\\natura2000\\natura2000.shp"
+nationale_parken_path = base_dictiornary + \
+    "\\Files\\nationaleparken\\nationaleparken.shp"
 
 # list_shapefile_modis = os.listdir(modis_shapefile_path)
 # list_shapefile_modis = shapefile_list_parser(list_shapefile_modis)
@@ -78,13 +85,17 @@ def loading_shapefiles(shapefiles, path):
 shapefiles_loaded_viirs_small = loading_shapefiles(
     shapefiles=list_shapefile_viirs_small, path=viirs_shapefile_path_small)
 # shapefiles_loaded_modis = loading_shapefiles(shapefiles=list_shapefile_modis, path=modis_shapefile_path)
-
+shapefiles_loaded_viirs_small = shapefiles_loaded_viirs_small.replace(
+    {'month': months_choices})
 # Loading Dutch Raster
 raster_pathname = "F:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\clc2018_clc2018_v2018_20_raster100m\\NederlandCorine.tif"
 landcover_the_netherlands = rasterio.open(raster_pathname)
 
 # loading Natura 2000 points
 natura2000 = gpd.read_file(natura2000_path)
+nationale_parken = gpd.read_file(nationale_parken_path)
+
+
 # Legend Data
 legend = pd.read_csv(
     'F:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\clc2018_clc2018_v2018_20_raster100m\\Legend\\CLC2018_CLC2018_V2018_20_QGIS.txt', sep=",", header=None)
@@ -101,134 +112,139 @@ reg_line = stats.linregress(
 
 print(reg_line.rvalue ** 2)
 
-sns.set_style("darkgrid")
 
 sns.lineplot(data=viirs_yearly_fires, x=np.arange(len(viirs_yearly_fires.keys())),
              y=viirs_yearly_fires.values, ci=None, color="grey", markers="o")
 plot = sns.regplot(data=viirs_yearly_fires, x=np.arange(len(viirs_yearly_fires.keys())),
                    y=viirs_yearly_fires.values, ci=None, scatter=False, color="black")
-plot.set_xlabel("year")
-plot.set_ylabel("amount of firepixels")
+plot.set_xlabel("Year")
+plot.set_ylabel("Amount of firepixels")
 plot.set_xticklabels(viirs_yearly_fires.keys())
-
+plt.savefig("regression_line_yearly_fires.png", dpi=300)
 
 # %% Plotting Monthly trends
-print(months_choices)
+plt.cla()
 viirs_monthly = shapefiles_loaded_viirs_small.pivot_table(values="id",
                                                           index=["month"],
                                                           columns="year",
                                                           aggfunc=len,
-                                                          fill_value=0)
-print(viirs_monthly)
-viirs_monthly.plot(kind='bar')
+                                                          fill_value=0).reset_index()
+viirs_monthly = viirs_monthly.melt(id_vars=["month"], value_name="count")
+years = viirs_monthly["year"].unique()
+fig = sns.catplot(data=viirs_monthly, x="month",
+                  y="count",
+                  hue="year",
+                    aspect=1.25,
+                  style="year",
+                  kind="point",
+                  dodge=True)
+fig.ax.grid(True, axis="both")
+fig.set_axis_labels("Month", "Amount of fire pixels",)
+fig.legend.set_title("FireType")
+# fig.set_title("Amount of fire pixels per month per year")
+# viirs_monthly.plot(kind="scatter")
 
-# %% Plot fires in natural areas
-points = shapefiles_loaded_viirs_small["geometry"].centroid
-# fig, ax = plt.subplots(figsize=(12, 19))
+# sns.lineplot(data=viirs_monthly, x="month", y="count", hue="year")
+# %% Plot the location related to the national parks
+viirs_points = shapefiles_loaded_viirs_small["geometry"]
+natura_single_geometry = natura2000.unary_union
+nationale_parken_single_geometry = nationale_parken.unary_union
 # show(landcover_the_netherlands, ax=ax)
 # points.plot(ax=ax, color="red")
-natura2000_union = natura2000.unary_union
-mask = points.within(natura2000_union)
-points = points.loc[mask]
-print(points)
+natura_mask = viirs_points.within(natura_single_geometry)
+national_parks_mask = viirs_points.within(nationale_parken_single_geometry)
+# points = points[mask]
 
+# %% Plot
+data_plot = pd.DataFrame({
+    'titles': ['National Parks\nand\nNatura2000', 'National parks', 'Natura2000', 'None'],
+    'values': [
+        (national_parks_mask & natura_mask).sum(),
+        (national_parks_mask & ~natura_mask).sum(),
+        (natura_mask & ~national_parks_mask).sum(),
+        (~national_parks_mask & ~natura_mask).sum()
+    ]
+})
 
-# %% FIRETYPE
+fig = sns.barplot(x="titles", y="values", data=data_plot, color="darkgrey")
+plt.xlabel("")
+plt.ylabel("Amount of firepixels")
+fig.grid(True, axis="y")
+plt.savefig("fires_within_natural_areas.png", dpi=300)
 
+# %% BarGraph yearly type
+plt.cla()
 
-def bar_plot_firetype(shapefiles, subplot, time_periods, time_type):
-    max_values = []
+fig = sns.countplot(x="year", hue="firetype",
+                    data=shapefiles_loaded_viirs_small,
+                    palette=["cornflowerblue", "limegreen",
+                             "peru", "grey", "gold"])
 
-    # Gets the unique values of the satellite data
-    max_values = np.unique(np.array(max_values))
+# Make legend labels
+fig.set_xlabel("Year")
+fig.set_ylabel("Amount of firepixels")
+fig.grid(True, axis="y")
 
-    bottom = None
+# set legend texts
+for t in fig._legend.texts:
+    t.set_text(t.get_text().title())
 
-    ind = np.arange(len(time_periods))
-    for firetype in firetypes[::-1]:
+legend = fig.get_legend()
+legend.set_title("Firetype")
+legend.get_frame().set_facecolor("white")
+plt.savefig("yearly_fires_firetype.png", dpi=300)
 
-        bar_values = []
-
-        if firetype not in shapefiles.groups.keys():
-            bar_values = [0] * 12
-        else:
-            values = shapefiles.get_group(firetype)
-
-            for time in time_periods:
-
-                filtered_data = values.query(time_type + ' == "' + time + '"')
-
-                if len(filtered_data) > 0:
-                    bar_values.append(len(filtered_data))
-                else:
-                    bar_values.append(0)
-
-        if (bottom is None):
-            subplot.bar(ind, np.array(bar_values),
-                        label=firetype, bottom=bottom)
-            bottom = np.array(bar_values)
-        else:
-            subplot.bar(ind, np.array(bar_values),
-                        label=firetype, bottom=bottom)
-            bottom += np.array(bar_values)
-    print(bottom)
-    return subplot
-
-
+# %% FIRETYPE overview monthly for each year
+plt.cla()
 viirs_relative = shapefiles_loaded_viirs_small.pivot_table(values="id",
                                                            index=[
-                                                               "firetype"],
-                                                           columns="year",
+                                                               "firetype", "year"],
+                                                           columns="month",
                                                            aggfunc=len,
-                                                           fill_value=0)
-viirs_relative_sum = (viirs_relative / viirs_relative.sum()) * 100
-# %% yearly relative effected land type
+                                                           fill_value=0).reset_index()
+years = list(viirs_relative["year"].unique())
 
-fig, axs = plt.subplots(1, 1, figsize=(18, 9), sharey=True)
-years = list(shapefiles_loaded_viirs_small.groupby("year").groups.keys())
-viirs_relative_monthly = shapefiles_loaded_viirs_small.groupby("year")
-axs = bar_plot_firetype(shapefiles_loaded_viirs_small.groupby(
-    "firetype"), axs, years, 'year')
-plt.xticks(np.arange(len(years)), years)
-fig.suptitle("Yearly amount of fires")
-plt.legend()
-plt.savefig('fire_types_yearly.png', bbox_inches="tight", dpi=300)
-# %% Monthly
-fig, axs = plt.subplots(1, 1, figsize=(18, 9), sharey=True)
-years = list(shapefiles_loaded_viirs_small.groupby("year").groups.keys())
-axs = bar_plot_firetype(shapefiles_loaded_viirs_small.groupby(
-    "firetype"), axs, list(months_choices.keys()), 'month')
-plt.xticks(np.arange(len(months_choices.values())),
-           list(months_choices.values()))
-fig.suptitle("Monthly amount of fires")
-plt.legend()
-plt.savefig('fire_types_monthly.png', bbox_inches="tight", dpi=300)
+viirs_relative = viirs_relative.melt(
+    id_vars=["firetype", "year"], value_name="count")
+viirs_relative = viirs_relative.sort_values(by="year")
 
-# %% Plots the different years with land use changes
+legend_labels = sorted(list(map(lambda firetype: firetype.title(),
+                                shapefiles_loaded_viirs_small["firetype"].unique())))
+fig = sns.catplot(data=viirs_relative, x="month", y="count",
+                  col="year",
+                  col_wrap=3,
+                  kind="bar",
+                  hue="firetype",
+                  palette=["peru",  "limegreen",
+                           "cornflowerblue", "grey", "gold"],
+                  aspect=1.50)
 
-viirs_data_years = shapefiles_loaded_viirs_small.groupby("year")
-fig, axs = plt.subplots(3, 3, figsize=(18, 9), sharey=True)
-axs = axs.flatten()
+for ax in fig.axes.flat:
+    ax.grid(True, axis="y")
 
-for index, (year, data) in enumerate(viirs_data_years):
-    axs[index] = bar_plot_firetype(data.groupby(
-        "firetype"), axs[index], list(months_choices.keys()), 'month')
-    axs[index].set_title(year)
-    axs[index].set_xticks(np.arange(len(months_choices.values())))
-    axs[index].set_xticklabels(list(months_choices.values()), rotation=90)
-    axs[index].legend()
+fig.set_axis_labels("Month", "Amount of fire pixels")
+for (row_val), ax in fig.axes_dict.items():
+    ax.set_title(row_val)
 
-plt.tight_layout()
+# set legend texts
+for t in fig._legend.texts:
+    t.set_text(t.get_text().title())
+#
+fig.legend.set_title("Year")
+plt.savefig('monthly_fires_type.png', dpi=600)
+
+
 # %% Plots the distance of the fire spot to the road
 
 # nog een 95% graden lijn van de afstand
 shapefile_roads_and_railroads = gpd.read_file(
     "F:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\VIIRS375M\\Join_wegen\\VIIRS375M_Distance.shp")
 
-plt.hist(shapefile_roads_and_railroads['distance'], bins=20, rwidth=0.8)
+sns.displot(shapefile_roads_and_railroads,
+            x="distance", bins=20, color="darkgrey")
 plt.title("Distribution of distances of fires from roads")
 plt.xlabel("Distance (m)")
-plt.ylabel("Amount")
+plt.ylabel("Amount of pixels")
 plt.savefig('distance_distribution.png', bbox_inches="tight", dpi=300)
 
 # %%
