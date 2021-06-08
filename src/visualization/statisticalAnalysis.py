@@ -5,22 +5,21 @@ Furthermore, it highlights different time scales
 """
 # %% IMPORT LIBRARIES
 import rasterio
-from rasterio.mask import mask
-from rasterio.plot import show
 
 import pandas as pd
 import geopandas as gpd
 import matplotlib.pyplot as plt
+
 import os
 import calendar
 import numpy as np
 from scipy import stats
 import seaborn as sns
 
-from shapely import wkt
-from shapely.geometry import Polygon
+from shapely import wkt 
 from shapely.ops import transform
 import pyproj
+# Bug between finding the correct path to proj between python anaconda and postgresql postgis
 pyproj.datadir.set_data_dir(os.environ["USERPROFILE"] + "\\Miniconda3\\Library\\share\\proj")
 
 from dotenv import load_dotenv
@@ -39,7 +38,7 @@ conn = connection.Connection()
 if os.getenv("RASTER_CORINE") is None:
     raise FileNotFoundError('RASTER_CORINE location not in enviroment')
 
-landcover_the_netherlands = rasterio.open(os.getenv("RASTER_CORINE"))
+landcover_the_netherlands = rasterio.open(os.getenv("RASTER_CORINE"), unit="degree")
 
 # loading Natura 2000 points
 natura2000 = gpd.read_file('F:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\natura2000\\natura2000.shp')
@@ -50,7 +49,7 @@ legend = pd.read_csv(
     'F:\\Universiteit\\Earth Science msc 2019 - 2020\\Research Project\\Files\\clc2018_clc2018_v2018_20_raster100m\\Legend\\CLC2018_CLC2018_V2018_20_QGIS.txt', sep=",", header=None)
 legend.columns = ["id",  "r", "g", "b", "greyscale", "description"]
 
-# %% Pie chart percentage of fire
+# %% Figure 3
 query = pd.read_sql_query(
     """
     SELECT LandCoverType, COUNT(*) amount_pixels 
@@ -80,7 +79,7 @@ plt.savefig('firetype_distribution.png', dpi=300)
 plt.show()
 plt.cla()
 
-# %% Amount of fires for the last couples years
+# %% Figure 6
 query = pd.read_sql_query(
     """
     SELECT CAST(EXTRACT('year' from fp.date) AS int) AS year,  count(*) count
@@ -108,7 +107,7 @@ plot.set_xticklabels(np.array(query["year"]))
 plt.savefig("regression_line_yearly_fires.png", dpi=300)
 plt.show()
 
-# %% Plotting Monthly trends landcover
+# %% Figure 7
 plt.cla()
 query = pd.read_sql_query(
     """
@@ -154,7 +153,6 @@ plt.savefig("Avg_monthly_fire_grouped_by_landcover.png", dpi = 300)
 # viirs_monthly.plot(kind="scatter")
 plt.show()
 
-# sns.lineplot(data=viirs_monthly, x="month", y="count", hue="year")
 #%% Plot monthly over the years
 query = pd.read_sql_query(
     """
@@ -192,6 +190,7 @@ plt.tight_layout()
 # plt.show()
 plt.savefig("Monthly_Trend_Years.png", dpi=300)
 plt.clf()
+
 # %% Plot the location related to the national parks
 query = pd.read_sql_query(
     """
@@ -200,7 +199,6 @@ query = pd.read_sql_query(
     """, con=conn.conn)
 project_to_meters = pyproj.Transformer.from_crs(pyproj.CRS.from_epsg(4326), "epsg:28992", always_xy=True).transform
 query["pixel"] = query["pixel"].apply(lambda p: transform(project_to_meters, wkt.loads(p)))
-print(query)
 
 natura_single_geometry = natura2000.unary_union
 nationale_parken_single_geometry = nationale_parken.unary_union
@@ -217,7 +215,7 @@ data_plot = pd.DataFrame({
         (~national_parks_mask & ~natura_mask).sum()
     ]
 })
-# %% Plot natura 2000 values
+# %% Figure 4
 fig = sns.barplot(x="titles", y="values", data=data_plot, color="darkgrey")
 plt.xlabel("")
 plt.ylabel("Amount of firepixels")
@@ -231,33 +229,11 @@ for patch in fig.patches:
     fig.text(_x, _y, value, ha="center") 
 sns.despine(ax=fig)
 plt.tight_layout()
-plt.savefig("fires_within_natural_areas.png", dpi=300)
+plt.savefig("natural_areas.png", dpi=300)
 plt.show()
 plt.cla()
 
-# %% BarGraph yearly type
-
-# fig = sns.countplot(x="year", hue="firetype",
-#                     data=shapefiles_loaded_viirs_small,
-#                     palette=["cornflowerblue", "limegreen",
-#                              "peru", "grey", "gold"])
-
-# # Make legend labels
-# fig.set_xlabel("Year")
-# fig.set_ylabel("Amount of firepixels")
-# fig.grid(True, axis="y")
-# + 
-# # set legend texts
-# for t in fig._legend.texts:
-#     t.set_text(t.get_text().title())
-
-# legend = fig.get_legend()
-# legend.set_title("Firetype")
-# legend.get_frame().set_facecolor("white")
-# plt.savefig("yearly_fires_firetype.png", dpi=300)
-
-
-# %% Plots the distance of the fire spot to the road
+# %% Figure5
 
 # nog een 95% graden lijn van de afstand
 shapefile_roads_and_railroads = gpd.read_file(
@@ -268,6 +244,7 @@ sns.displot(shapefile_roads_and_railroads,
 plt.title("Distribution of distances of fires from roads")
 plt.xlabel("Distance (m)")
 plt.ylabel("Amount of pixels")
+
 plt.savefig('distance_distribution.png', bbox_inches="tight", dpi=300)
 
 # %%

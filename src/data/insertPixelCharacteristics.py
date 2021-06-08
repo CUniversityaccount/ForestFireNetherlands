@@ -147,9 +147,6 @@ def set_pixel_characteristics():
         cursor.close()
     conn.close()
 
-def insert_pixel_characteristics():
-    return
-
 
 if __name__ == '__main__':
     set_pixel_characteristics()
